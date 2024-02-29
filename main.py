@@ -15,7 +15,6 @@ def evolve_system_with_time_increment(model, initial_area, target_area_start, ta
     current_target_area = target_area_start 
     output_dir = "images"  # Define the directory where images will be saved
     os.makedirs(output_dir, exist_ok=True)  # Ensure the output directory exists
-    
     # Generate the initial hexagonal grid and compute energies
     #model.generate_hexagonal_circle(circle_radius=radius, hex_area=initial_area)
     model.generate_hexagonal_grid(1, 2, radius=math.sqrt((2 * initial_area) / (3 * math.sqrt(3))))
@@ -27,7 +26,7 @@ def evolve_system_with_time_increment(model, initial_area, target_area_start, ta
         energy    = EnergyModel(model)
         print(" ********* The total energy at this time increments is  ********* ", energy.compute_total_energy(), "  the value of area is ", current_target_area, " and the increment number is ",iteration,"**************************")
         optimise =  Optimiser(energy)
-        optimise.minimize_energies_gradient_descent(learning_rate=alpha, tolerance=tol, max_iterations=max_iter)
+        optimise.minimize_energies_with_jacobian(learning_rate=alpha, tolerance=tol, max_iterations=max_iter)
         model.update_vertex_positions(optimise.optimized_positions)
         # Increment the target area for the next iteration
         current_target_area += area_increment
