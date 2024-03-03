@@ -22,18 +22,63 @@ class Edge:
     def __repr__(self):
         return f"Edge(start={self.start.id}, end={self.end.id})"
 
-
-
 class VertexModel:
     def __init__(self):
         self.vertices = {}
+        self.vertices0= {} # New attribute to track previous nodal positions
         self.edges = []
         self.hexagons = {}  # New attribute to track hexagons
         self.preferred_area = None
-
-    def set_preferred_area(self, area):
+        self.K_area = 0
+        self.K_peri = 0
+        self.gamma = 0       
+        self.fric = 0  
+    def set_preferred_area(self, value):
         """Set the preferred area for the model."""
-        self.preferred_area = area
+        self.preferred_area = value
+
+
+    def set_K_area(self, value):
+        """Set the area constant K_area."""
+        self.K_area = value
+
+    def set_K_peri(self, value):
+        """Set the perimeter constant K_peri."""
+        self.K_peri = value
+
+    def set_gamma(self, value):
+        """Set the gamma constant."""
+        self.gamma = value
+
+
+    def set_fric(self, value):
+        """Set the gamma constant."""
+        self.fric = value
+
+    def get_preferred_area(self):
+        """Get the preferred area for the model."""
+        return self.preferred_area 
+
+
+    def get_K_area(self):
+        """Get the area constant K_area."""
+        return self.K_area 
+
+    def get_K_peri(self):
+        """Get the perimeter constant K_peri."""
+        return self.K_peri 
+
+    def get_gamma(self):
+        """Get the gamma constant."""
+        return self.gamma 
+
+    def get_fric(self):
+        """Get the gamma constant."""
+        return self.fric 
+
+
+    
+
 
 
     def add_vertex(self, id, x, y, z=0):
@@ -116,12 +161,6 @@ class VertexModel:
 
 
 
-    
-
-    def update_vertex_positions(self, vertex_positions):
-        for i, v_id in enumerate(self.vertices):
-            self.vertices[v_id].x, self.vertices[v_id].y = vertex_positions[2*i], vertex_positions[2*i + 1]
-
     def visualize(self, ax=None, style='bo-', label='State'):
         """
         Visualize the graph on the given Matplotlib axis with the specified style and add a legend only for the first edge.
@@ -169,3 +208,82 @@ class VertexModel:
                 if col % 2 == 1:
                     center_y += vert_spacing / 2
                 self.add_hexagon(center_x, center_y, radius)
+
+
+    def edge_id(self, start_vertex_id, end_vertex_id):
+        """Generate a unique ID for an edge based on the start and end vertex IDs."""
+        # Sort the vertex IDs to ensure consistency (undirected edge)
+        return tuple(sorted([start_vertex_id, end_vertex_id]))
+
+    def count_edge_occurrences(self):
+        """Count occurrences of each edge among all hexagons."""
+        edge_occurrences = {}
+        for hex_id, hex_vertices in self.hexagons.items():
+            num_vertices = len(hex_vertices)
+            for i in range(num_vertices):
+                # Assuming hex_vertices stores IDs of vertices
+                current_vertex_id = hex_vertices[i]
+                next_vertex_id = hex_vertices[(i + 1) % num_vertices]
+                edge = self.edge_id(current_vertex_id, next_vertex_id)
+                if edge in edge_occurrences:
+                    edge_occurrences[edge] += 1
+                else:
+                    edge_occurrences[edge] = 1
+        return edge_occurrences
+
+    def is_edge_boundary(self, edge):
+        """Determine if an edge is a boundary edge."""
+        edge_occurrences = self.count_edge_occurrences()
+        edge_tuple = self.edge_id(edge.start.id, edge.end.id)
+        # An edge is a boundary if it occurs only once among all hexagons
+        return edge_occurrences.get(edge_tuple, 0) == 1
+    
+
+    def calculate_boundary_perimeter(self):
+        """Calculate the total perimeter of the tissue using only boundary edges."""
+        total_perimeter = 0
+        for edge in self.edges:
+            if self.is_edge_boundary(edge):
+                dx = edge.start.x - edge.end.x
+                dy = edge.start.y - edge.end.y
+                edge_length = (dx**2 + dy**2)**0.5
+                total_perimeter += edge_length
+        return total_perimeter
+    
+
+    def calculate_hexagon_area(self, hexagon_vertices):
+        """Calculate the area of a hexagon using the Shoelace formula."""
+        n = len(hexagon_vertices)
+        area = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            # Correctly access the x and y attributes of the Vertex objects
+            xi, yi = self.vertices[hexagon_vertices[i]].x, self.vertices[hexagon_vertices[i]].y
+            xj, yj = self.vertices[hexagon_vertices[j]].x, self.vertices[hexagon_vertices[j]].y
+            area += xi * yj
+            area -= xj * yi
+        area = abs(area) / 2.0
+        return area
+
+    def calculate_total_tissue_area(self):
+        """Calculate the total area of the tissue by summing the areas of all hexagons."""
+        total_area = 0.0
+        for hexagon_vertices in self.hexagons.values():
+            hexagon_area = self.calculate_hexagon_area(hexagon_vertices)
+            total_area += hexagon_area
+        return total_area
+    
+    def calculate_circularity(self):
+        """Calculate the circularity of the entire tissue."""
+        total_area = self.calculate_total_tissue_area()
+        total_perimeter = self.calculate_boundary_perimeter()
+        if total_perimeter == 0:
+            return 0  # Avoid division by zero
+        circularity = (4 * math.pi * total_area) / (total_perimeter ** 2)
+        return circularity
+
+
+    def update_vertex_positions(self, vertex_positions):
+        for i, v_id in enumerate(self.vertices):
+            self.vertices[v_id].x, self.vertices[v_id].y = vertex_positions[2*i], vertex_positions[2*i + 1]
+

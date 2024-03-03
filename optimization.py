@@ -1,43 +1,55 @@
 import numpy as np
 from scipy.optimize import minimize
 from scipy.optimize import minimize
+import copy
+
 
 class Optimiser:
     def __init__(self, energy_model):
         self.energy_model = energy_model
         self.optimized_positions = []
 
-    def update_vertex_positions(self, vertex_positions):
-        """
-        Update the positions of vertices in the energy model based on optimization results.
-        """
-        for i, v_id in enumerate(self.energy_model.vertices.keys()):
-            self.energy_model.vertices[v_id].x, vertex_positions[2*i]
-            self.energy_model.vertices[v_id].y = vertex_positions[2*i + 1]
+
             
 
     def minimize_energies(self, learning_rate=0.01, tolerance=1e-6, max_iterations=10000):
         # Flatten vertex positions into a single array for the optimizer
         initial_positions = np.array([coord for vertex in self.energy_model.vertices.values() for coord in (vertex.x, vertex.y)])
-
+        #Update initial condition for the iteration+1 time step
+        self.energy_model.vertices0 = copy.deepcopy(self.energy_model.vertices)
         # The objective function now directly computes the energy or metric to minimize using the energy model
         def objective_function(vertex_positions):
-            # Update the model's vertices based on the optimization variables
-            self.update_vertex_positions(vertex_positions)
-            
             # Compute the total energy for the current configuration using the energy model
             return self.energy_model.objective_function(vertex_positions)
 
-        # The optimization routine using Nelder-Mead
-        result = minimize(fun=objective_function,
-                          x0=initial_positions,
-                          method='Nelder-Mead',
-                          options={'disp': True, 'maxiter': max_iterations, 'fatol': tolerance})
+        #The optimization routine using Nelder-Mead
+        # result = minimize(fun=objective_function,
+        #                    x0=initial_positions,
+        #                    method='Nelder-Mead',
+        #                    options={'disp': True, 'maxiter': max_iterations, 'fatol': tolerance})
+
+        result = minimize(
+            fun=objective_function,
+            x0=initial_positions,
+            method='L-BFGS-B',
+            jac="3-point",
+            options={
+                'disp': True,
+                'maxiter': 1000000,
+                'maxfun': 600000,   # Increase the maximum number of function evaluations
+                'ftol': 1e-5,  # Tighten the function tolerance
+                'gtol': 1e-5   ,  # Gradient tolerance
+                'maxls': 200,   # Increase the maximum number of line search steps
+            })
 
         # Update the model with the optimized positions
+        # Check if the optimization was successful
+        if not result.success:
+            raise RuntimeError("Optimization did not converge successfully.")
+        else: 
+            print("Optimization converge successfully.")
         self.optimized_positions = result.x
-
-
+    
     def minimize_energies_with_jacobian(self, learning_rate=0.01, tolerance=1e-6, max_iterations=10000):
         # Initial positions of vertices as a flattened array for optimization
         initial_positions = np.array([coord for vertex in self.energy_model.vertices.values() for coord in (vertex.x, vertex.y)])
@@ -46,16 +58,16 @@ class Optimiser:
         fixed_vertex_ids = [ 'vertex_1.2408_0.0', 'vertex_0.6204_1.0746']  # IDs of vertices to fix
 
         # Create bounds for each vertex
-        bounds = []
+        bounds_ = []
         for i, (v_id, vertex) in enumerate(self.energy_model.vertices.items()):
             if v_id in fixed_vertex_ids:
                 # Fix vertex by setting its bounds to its current position
-                bounds.append((vertex.x, vertex.x))
-                bounds.append((vertex.y, vertex.y))
+                bounds_.append((vertex.x, vertex.x))
+                bounds_.append((vertex.y, vertex.y))
             else:
                 # Allow vertex to move freely within a wide range
-                bounds.append((None, None))  # Assuming the optimization method supports None bounds
-                bounds.append((None, None))
+                bounds_.append((None, None))  # Assuming the optimization method supports None bounds
+                bounds_.append((None, None))
 
 
         # Define the objective function that calculates the energy
@@ -81,13 +93,14 @@ class Optimiser:
         result = minimize(
             fun=objective_function,
             x0=initial_positions,
-            method='L-BFGS-B',
+            method='CG',
             jac=jacobian,
+            bounds=bounds_,
             options={
                 'disp': False,
                 'maxiter': 100000,
-                'ftol': 1e-8,  # Tighten the function tolerance
-                'gtol': 1e-8   ,  # Gradient tolerance
+                'ftol': 1e-6,  # Tighten the function tolerance
+                'gtol': 1e-6   ,  # Gradient tolerance
                 'maxls': 200,   # Increase the maximum number of line search steps
             }
         )
@@ -99,48 +112,4 @@ class Optimiser:
 
         # After optimization, update the model with the optimized positions
         self.optimized_positions = result.x
-
-
-
-
-    def minimize_energies_gradient_descent(self, learning_rate=0.001, tolerance=1e-6, max_iterations=10000):
-        for iteration in range(max_iterations):
-            # Compute the energy gradients for current configuration
-            gradients = self.energy_model.derivatives_of_energy_with_area()
-            
-            # Track the change in vertex positions for this iteration to check for convergence
-            max_position_change = 0
-            
-            # Update the positions of vertices based on the computed gradients
-            for v_id, grad in gradients.items():
-                vertex = self.energy_model.vertices[v_id]
-                
-                # Calculate the updates for x and y positions
-                update_x = -learning_rate * grad[0]
-                update_y = -learning_rate * grad[1]
-                
-                # Update vertex positions
-                vertex.x += update_x
-                vertex.y += update_y
-                
-                # Track the largest position change
-                max_position_change = max(max_position_change, abs(update_x), abs(update_y))
-            
-            # Recompute the energies after updating vertex positions
-            self.energy_model.compute_energy()
-            total_energy = self.energy_model.compute_total_energy()
-            
-            # Output some information for monitoring
-            print(f"Iteration {iteration + 1}, Total Energy: {total_energy}, Max Position Change: {max_position_change}")
-            
-            # Check for convergence (if the maximum position change is below the tolerance)
-            if max_position_change < tolerance:
-                print("Convergence achieved.")
-                break
-        else:
-            print("Max iterations reached without convergence.")
-        
-        # After the optimization loop, store the most updated coordinates
-        # This ensures the model reflects the current state of all vertices
-        self.optimized_positions = np.array([coord for vertex in self.energy_model.vertices.values() for coord in (vertex.x, vertex.y)])
 
